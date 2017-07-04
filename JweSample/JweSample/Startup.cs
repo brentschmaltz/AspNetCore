@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.Tokens;
 
 namespace JweSample
 {
@@ -54,16 +55,26 @@ namespace JweSample
 
             app.UseStaticFiles();
             app.UseCookieAuthentication();
+
             app.UseOpenIdConnectAuthentication(new OpenIdConnectOptions
             {
+                Authority = "https://testingsts.azurewebsites.net",
                 ClientId = "client-001",
-                CallbackPath = Configuration["Authentication:Oidc:CallbackPath"],
-                MetadataAddress = "https://testingsts.azurewebsites.net/.well-known/openid-configuration",
+                CallbackPath =  "/signin-oidc",
                 Events = new OpenIdConnectEvents
                 {
+                    OnAuthenticationFailed = OnAuthenticationFailed,
                     OnRedirectToIdentityProvider = OnRedirectToIdentityProvider,
                     OnMessageReceived = OnMessageReceived,
                     OnTokenValidated = OnTokenValidated
+                },
+                // user will need to set keys for decryption here
+                TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+                {
+                    TokenDecryptionKey = new SymmetricSecurityKey(Convert.FromBase64String("WIVds2iwJPwNhgUgwZXmn/46Ql1EkiL+M+QqDRdQURE="))
+                    {
+                        KeyId = "sym_key_256"
+                    }
                 }
             });
 
@@ -75,14 +86,23 @@ namespace JweSample
             });
         }
 
-        private Task OnRedirectToIdentityProvider(RedirectContext context)
+        private Task OnAuthenticationFailed(AuthenticationFailedContext context)
         {
-            context.ProtocolMessage.SetParameter("tParms", "yJKV0VfYWxnIjogIkExMjhLVyIsICJKV0VfZW5jIjogIkExMjhDQkMtSFMyNTYiLCAiSldFX2FsZ19rZXlfa2lkIjogInN5bV9rZXlfMjU2In0");
+            context.HandleResponse();
+            context.Response.Redirect("/Home/Error");
             return Task.FromResult(0);
         }
 
         private Task OnMessageReceived(MessageReceivedContext context)
         {
+            return Task.FromResult(0);
+        }
+
+        private Task OnRedirectToIdentityProvider(RedirectContext context)
+        {
+            // instructions to TestingSts to create a JWE using key above and 'dir' alg.
+            var param = Base64UrlEncoder.Encode(@"{""JWE_alg"":""dir"",""JWE_enc"":""A128CBC-HS256"",""JWE_alg_key_kid"":""sym_key_256""}");
+            context.ProtocolMessage.SetParameter("tParams", param);
             return Task.FromResult(0);
         }
 
